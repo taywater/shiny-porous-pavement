@@ -1,0 +1,12 @@
+name: mars_porous_pavement
+title: MARS Porous Pavement
+username: nick.manna
+account: nick.manna
+server: pwdrstudio
+hostUrl: https://pwdrstudio:443/__api__
+appId: 156
+bundleId: 912
+url: https://pwdrstudio/content/156/
+when: 1617819819.23414
+asMultiple: FALSE
+asStatic: FALSE
