@@ -227,30 +227,25 @@ porous_pavementServer <- function(id, parent_session, surface_type, poolConn, co
         if(length(input$ppt_table_rows_selected) == 0){
           #add to porous_pavement
           add_ppt_query <- paste0("INSERT INTO fieldwork.porous_pavement (test_date, smp_id, surface_type_lookup_uid, con_phase_lookup_uid,
-                            test_location)
-        	                  VALUES ('", input$date, "','", input$smp_id, "',",  rv$type(), ",", rv$phase(), ",", rv$test_location(), ")") 
+                            test_location, data_in_spreadsheet, map_in_site_folder)
+        	                  VALUES ('", input$date, "','", input$smp_id, "',",  rv$type(), ",", rv$phase(), ",", rv$test_location(), ",", 
+        	                                rv$data(), ", ", rv$folder(), ")") 
           
-          #add to porous_pavement_metadata
-          add_ppt_meta_query <- paste0("INSERT INTO fieldwork.porous_pavement_metadata (porous_pavement_uid, data_in_spreadsheet, map_in_site_folder)
-                                    VALUES ((SELECT MAX(porous_pavement_uid) FROM fieldwork.porous_pavement), ", rv$data(), ",", rv$folder(), ")")
           
           odbc::dbGetQuery(poolConn, add_ppt_query)
-          odbc::dbGetQuery(poolConn, add_ppt_meta_query)
           
         }else{
           edit_ppt_query <- paste0(
             "UPDATE fieldwork.porous_pavement SET smp_id = '", input$smp_id, "', test_date = '", input$date, 
             "', surface_type_lookup_uid = ",  rv$type(),
             ", con_phase_lookup_uid = '", rv$phase(),
-            "', test_location = ", rv$test_location(),"
-            WHERE porous_pavement_uid = '", rv$ppt_table_db()[input$ppt_table_rows_selected, 1], "'")
+            "', test_location = ", rv$test_location(),
+            ", map_in_site_folder = ", rv$folder(), 
+            ", data_in_spreadsheet = ", rv$data(),
+            " WHERE porous_pavement_uid = '", rv$ppt_table_db()[input$ppt_table_rows_selected, 1], "'")
           
-          edit_ppt_meta_query <- paste0("UPDATE fieldwork.porous_pavement_metadata  SET data_in_spreadsheet = ", rv$data(), 
-                                        ", map_in_site_folder = ", rv$folder(), 
-                                        " WHERE porous_pavement_uid = '", rv$ppt_table_db()[input$ppt_table_rows_selected, 1], "'")
           
           dbGetQuery(poolConn, edit_ppt_query)
-          dbGetQuery(poolConn, edit_ppt_meta_query)
         }
         
         if(length(input$future_ppt_table_rows_selected) > 0){
