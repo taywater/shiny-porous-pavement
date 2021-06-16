@@ -6,9 +6,7 @@ porous_pavementUI <- function(id, label = "porous_pavement", html_req, surface_t
   navbarPage("Porous Pavement", theme = shinytheme("cerulean"), id = "inTabset",
              tabPanel("Add/Edit Porous Pavement Test", value = "ppt_tab", 
                       titlePanel("Add Porous Pavement Test"), 
-                      sidebarPanel(fluidRow(h5()),
-                                   fluidRow(h5()),
-                                   selectizeInput(ns("smp_id"), future_req(html_req("SMP ID")), choices = NULL, 
+                      sidebarPanel(selectizeInput(ns("smp_id"), future_req(html_req("SMP ID")), choices = NULL, 
                                                   options = list(
                                                     placeholder = 'Select an Option',
                                                     onInitialize = I('function() { this.setValue(""); }')
@@ -16,7 +14,27 @@ porous_pavementUI <- function(id, label = "porous_pavement", html_req, surface_t
                                    dateInput(ns("date"), html_req("Test Date"), value = as.Date(NA)), 
                                    selectInput(ns("surface_type"), html_req("Surface Type"), choices = c("", surface_type$surface_type), selected = NULL), 
                                    selectInput(ns("con_phase"), html_req("Construction Phase"), choices = c("", con_phase$phase), selected = NULL),
-                                   textInput(ns("location"), "Test Location"), 
+                                   textInput(ns("location"), "Test Location"),
+                                   fluidRow(
+                                   column(6, selectInput(ns("ring_dia"), "Ring Diameter (in)", choices = c("","9.75", "11.625"), selected = NULL)),
+                                   column(6, numericInput(ns("prewet_time"), "Prewet Time (sec)", value = NA, min = 0))
+                                   ), 
+                                   conditionalPanel(condition = "input.prewet_time > 599", 
+                                                    ns = ns, 
+                                                    disabled(numericInput(ns("pw_rate"), "Rate (in/hr) based on Prewet Time", value = NA, min = 0))),
+                                   conditionalPanel(condition = "input.prewet_time < 599", 
+                                                   ns = ns, 
+                                                   selectInput(ns("weight"), "Mass of Water (lb)",
+                                                                        choices = c("", 8.34, 41.7), selected = NULL),
+                                                   fluidRow(
+                                                     column(6, numericInput(ns("time_one"), "T1 Time (sec)", value = NA, min = 0)),
+                                                     column(6, disabled(numericInput(ns("rate_one"), "T1 Rate (in/hr)", value = NA, min = 0)))
+                                                     ),
+                                                   fluidRow(
+                                                     column(6, numericInput(ns("time_two"), "T2 Time (sec)", value = NA, min = 0)),
+                                                     column(6, disabled(numericInput(ns("rate_two"), "T2 Rate (in/hr)", value = NA, min = 0)))
+                                                   )
+                                                   ),
                                    selectInput(ns("data"), "Data in Spreadsheet", choices = c("","Yes" = "1", "No" = "0"), selected = NULL), 
                                    selectInput(ns("folder"), "Test Location Map in Site Folder", choices = c("","Yes" = "1", "No" = "0"), selected = NULL),
                                    conditionalPanel(condition = "input.date === null", 
@@ -28,6 +46,7 @@ porous_pavementUI <- function(id, label = "porous_pavement", html_req, surface_t
                                                     actionButton(ns("future_ppt"), "Add Future Porous Pavement Test")),
                                    actionButton(ns("add_ppt"), "Add Porous Pavement Test"), 
                                    actionButton(ns("clear_ppt"), "Clear All Fields"),
+                                   actionButton(ns("print_check"), "Print Check"),
                                    fluidRow(
                                      HTML(paste(html_req(""), " indicates required field for complete tests. ", future_req(""), " indicates required field for future tests.")))
                       ), 
@@ -79,16 +98,16 @@ porous_pavementServer <- function(id, parent_session, surface_type, poolConn, co
       )
       
       #query full porous pavement view
-      rv$query <- reactive(paste0("SELECT * FROM fieldwork.porous_pavement_full WHERE smp_id = '", input$smp_id, "'"))
+      rv$query <- reactive(paste0("SELECT * FROM fieldwork.porous_pavement_wide WHERE smp_id = '", input$smp_id, "'"))
       
       rv$ppt_table_db <- reactive(dbGetQuery(poolConn, rv$query()))
       
       #adjust table for viewing
       rv$ppt_table <- reactive(rv$ppt_table_db() %>% 
                                  mutate(across(where(is.POSIXct), trunc, "days")) %>% 
-                                 mutate(across(where(is.POSIXlt), as.character)) %>% 
-                                 dplyr::select("test_date", "surface_type", "phase", "test_location"))
-      
+                                 mutate(across(where(is.POSIXlt), as.character)) %>%
+                                 mutate(average_rate_inhr = round(average_rate_inhr, 1)) %>% 
+                                 dplyr::select("test_date", "surface_type", "phase", "test_location", "average_rate_inhr"))
       
       #toggle state (enable/disable) buttons based on whether system id, test date, and type are selected (this is shinyjs)
       observe(toggleState(id = "add_ppt", condition = nchar(input$smp_id) > 0 & length(input$date) > 0 & 
@@ -100,6 +119,12 @@ porous_pavementServer <- function(id, parent_session, surface_type, poolConn, co
       #toggle state for metadata depending on whether a test date is included
       observe(toggleState(id = "data", condition = length(input$date) > 0))
       observe(toggleState(id = "folder", condition = length(input$date) > 0))
+      observe(toggleState(id = "ring_dia", condition = length(input$date) > 0))
+      observe(toggleState(id = "prewet_time", condition = length(input$date) > 0))
+      observe(toggleState(id = "pw_rate", condition = length(input$date) > 0))
+      observe(toggleState(id = "weight", condition = length(input$date) > 0))
+      observe(toggleState(id = "time_one", condition = length(input$date) > 0))
+      observe(toggleState(id = "time_two", condition = length(input$date) > 0))
       
       #render datatable  for porous pavement
       output$ppt_table <- renderDT(
@@ -107,7 +132,7 @@ porous_pavementServer <- function(id, parent_session, surface_type, poolConn, co
         selection = 'single', 
         style = 'bootstrap', 
         class = 'table-responsive, table-hover', 
-        colnames = c('Test Date', 'Surface Type', 'Construction Phase', 'Test Location')
+        colnames = c('Test Date', 'Surface Type', 'Construction Phase', 'Test Location', 'Average Rate (in/hr)')
       )
       
       #query future PPTs
@@ -159,8 +184,20 @@ porous_pavementServer <- function(id, parent_session, surface_type, poolConn, co
         updateNumericInput(session, "location", value = rv$ppt_table_db()$test_location[input$ppt_table_rows_selected])
         
         #update metadata values
-        updateSelectInput(session, "data", selected = rv$ppt_table_db()$date_in_spreadsheet[input$ppt_table_rows_selected])
+        updateSelectInput(session, "data", selected = rv$ppt_table_db()$data_in_spreadsheet[input$ppt_table_rows_selected])
         updateSelectInput(session, "folder", selected = rv$ppt_table_db()$map_in_site_folder[input$ppt_table_rows_selected])
+        
+        #update general results values
+        updateSelectInput(session, "ring_dia", selected = rv$ppt_table_db()$ring_diameter_in[input$ppt_table_rows_selected])
+        updateSelectInput(session, "prewet_time", selected = rv$ppt_table_db()$prewet_time_s[input$ppt_table_rows_selected])
+        updateSelectInput(session, "pw_rate", selected = rv$ppt_table_db()$prewet_rate_inhr[input$ppt_table_rows_selected])
+        updateSelectInput(session, "weight", selected = rv$ppt_table_db()$test_one_weight_lbs[input$ppt_table_rows_selected])
+        
+        #update per test results values
+        updateSelectInput(session, "time_one", selected = rv$ppt_table_db()$test_one_time_s[input$ppt_table_rows_selected])
+        updateSelectInput(session, "rate_one", selected = rv$ppt_table_db()$test_one_rate_inhr[input$ppt_table_rows_selected])
+        updateSelectInput(session, "time_two", selected = rv$ppt_table_db()$test_two_time_s[input$ppt_table_rows_selected])
+        updateSelectInput(session, "rate_two", selected = rv$ppt_table_db()$test_two_rate_inhr[input$ppt_table_rows_selected])
         
       })
       
@@ -181,12 +218,86 @@ porous_pavementServer <- function(id, parent_session, surface_type, poolConn, co
       rv$data <- reactive(if(nchar(input$data) == 0 | input$data == "N/A") "NULL" else paste0("'", input$data, "'"))
       rv$folder <- reactive(if(nchar(input$folder) == 0 | input$folder == "N/A") "NULL" else paste0("'", input$folder, "'"))
       
+      rv$ring_dia <- reactive(if(nchar(input$ring_dia) == 0) "NULL" else paste0("'", input$ring_dia, "'"))
+      rv$prewet_time <- reactive(if(is.na(input$prewet_time)) "NULL" else paste0("'", input$prewet_time, "'"))
+      
+      rv$pw_rate <- reactive(if(is.na(input$pw_rate)) "NULL" else paste0("'", input$pw_rate, "'"))
+      
+      rv$weight <- reactive(if(nchar(input$weight) == 0) "NULL" else paste0("'", input$weight, "'"))
+      
+      rv$time_one <- reactive(if(is.na(input$time_one)) "NULL" else paste0("'", input$time_one, "'"))
+      rv$time_two <- reactive(if(is.na(input$time_two)) "NULL" else paste0("'", input$time_two, "'"))
+      
+      rv$rate_one <- reactive(if(is.na(input$rate_one)) "NULL" else paste0("'", input$rate_one, "'"))
+      rv$rate_two <- reactive(if(is.na(input$rate_two)) "NULL" else paste0("'", input$rate_two, "'"))
+      
       #add/edit button toggle
       rv$label <- reactive(if(length(input$ppt_table_rows_selected) == 0) "Add New" else "Edit Selected")
       observe(updateActionButton(session, "add_ppt", label = rv$label()))
       
-      rv$future_label <- reactive(if(length(input$future_ppt_table_rows_selected) == 0) "Add Future Porous Pavement Test" else "Edit Selected Future PPT")
+      rv$future_label <- reactive(if(length(input$future_ppt_table_rows_selected) == 0) "Add Future Porous Pavement Test" 
+                                  else "Edit Selected Future PPT")
       observe(updateActionButton(session, "future_ppt", label = rv$future_label()))
+      
+      
+      observeEvent(rv$prewet_time(), {
+        
+        if(rv$prewet_time() > 599.9){
+           reset("weight")
+           reset("time_one")
+           reset("time_two")
+           reset("rate_one")
+           reset("rate_two")
+          }else if(rv$prewet_time() < 599.89){
+            #reset("pw_rate")
+          }
+      })
+      
+      #calculate infiltration rate
+      #I = (KM)/(D^2*t)
+      #K = 126870
+      k <- 126870
+      #D = ring diameter (in)
+      #M = 8.34 lbs - 1 gal of water 
+      m <- 8.34
+      #t = prewet time
+      #infiltration rate based on prewet time
+      rv$pw_rate_inhr <- reactive(if(length(input$ring_dia) > 0 & !is.na(input$prewet_time)){
+                                  if(input$prewet_time > 599 & input$prewet_time <= 3600){
+        round(((k*m)/((as.numeric(input$ring_dia)^2)*input$prewet_time)),1)
+                                  }else{
+        NA
+      }
+        })
+      
+      observe(updateNumericInput(session = session, "pw_rate", value = rv$pw_rate_inhr()))
+      
+      #infiltration rate based on tests ONE
+      rv$rate_inhr_one <- reactive(if(length(input$weight) > 0 & !is.na(input$time_one)){
+        round(((k*as.numeric(input$weight))/((as.numeric(input$ring_dia)^2)*input$time_one)),1)
+      })
+      
+      observe(updateNumericInput(session = session, "rate_one", value = rv$rate_inhr_one()))
+      
+      #infiltration rate based on tests  TWO
+      rv$rate_inhr_two <- reactive(if(length(input$weight) > 0 & !is.na(input$time_two)){
+        round(((k*as.numeric(input$weight))/((as.numeric(input$ring_dia)^2)*input$time_two)),1)
+      })
+      
+      observe(updateNumericInput(session = session, "rate_two", value = rv$rate_inhr_two()))
+      # observeEvent(input$prewet_time, {
+      #   print(rv$pw_rate_inhr())
+      # })
+      # 
+      observeEvent(input$print_check, {
+       print(rv$ring_dia())
+        print(rv$prewet_time())
+        print(rv$pw_rate())
+        print(rv$weight())
+        print(rv$time_one())
+        print(rv$rate_one())
+      }
+      )
       
       #on click 
       observeEvent(input$future_ppt, {
@@ -223,18 +334,49 @@ porous_pavementServer <- function(id, parent_session, surface_type, poolConn, co
       
       #on click
       observeEvent(input$add_ppt, {
-        
+      
+        #if there are no rows selected, add new data
         if(length(input$ppt_table_rows_selected) == 0){
-          #add to porous_pavement
-          add_ppt_query <- paste0("INSERT INTO fieldwork.porous_pavement (test_date, smp_id, surface_type_lookup_uid, con_phase_lookup_uid,
-                            test_location, data_in_spreadsheet, map_in_site_folder)
-        	                  VALUES ('", input$date, "','", input$smp_id, "',",  rv$type(), ",", rv$phase(), ",", rv$test_location(), ",", 
-        	                                rv$data(), ", ", rv$folder(), ")") 
           
-          
-          odbc::dbGetQuery(poolConn, add_ppt_query)
-          
+          #if prewet time is > 599, only add to record table
+          #if less, then prepare to add to record and results tables
+          if(rv$prewet_time() > 599){
+            #add to porous_pavement
+            add_ppt_query <- paste0("INSERT INTO fieldwork.porous_pavement (test_date, smp_id, surface_type_lookup_uid, con_phase_lookup_uid,
+                              test_location, data_in_spreadsheet, map_in_site_folder, ring_diameter_in, prewet_time_s, prewet_rate_inhr)
+          	                  VALUES ('", input$date, "','", input$smp_id, "',",  rv$type(), ",", rv$phase(), ",", rv$test_location(), ",",
+          	                                rv$data(), ", ", rv$folder(), ", ", rv$ring_dia(), ", ", rv$prewet_time(), ", ", rv$pw_rate(), ")")
+
+
+            odbc::dbGetQuery(poolConn, add_ppt_query)
+          }else{
+            #add to porous pavement & porous results
+            #add to porous_pavement table
+            #then add to the porous_pavement_results table
+            #use the MAX(porous_pavement_uid) from pp table to get the PP UID of the most recent addition to the table (calculated by SERIAL), which is the current addition
+            #add to porous_pavement
+            add_ppt_query <- paste0("INSERT INTO fieldwork.porous_pavement (test_date, smp_id, surface_type_lookup_uid, con_phase_lookup_uid,
+                              test_location, data_in_spreadsheet, map_in_site_folder, ring_diameter_in, prewet_time_s, prewet_rate_inhr)
+          	                  VALUES ('", input$date, "','", input$smp_id, "',",  rv$type(), ",", rv$phase(), ",", rv$test_location(), ",", 
+                                    rv$data(), ", ", rv$folder(), ", ", rv$ring_dia(), ", ", rv$prewet_time(), ", ", rv$pw_rate(), ")") 
+            
+            #add first test to results
+            add_ppr_one_query <- paste0("INSERT INTO fieldwork.porous_pavement_results (porous_pavement_uid, weight_lbs, time_s, rate_inhr) 
+                                      vALUES ((SELECT MAX(porous_pavement_uid) FROM fieldwork.porous_pavement), ", rv$weight(), ", ", 
+                                    rv$time_one(), ", ", rv$rate_one(), ")")
+            
+            #add second test to results
+            add_ppr_two_query <- paste0("INSERT INTO fieldwork.porous_pavement_results (porous_pavement_uid, weight_lbs, time_s, rate_inhr) 
+                                      vALUES ((SELECT MAX(porous_pavement_uid) FROM fieldwork.porous_pavement), ", rv$weight(), ", ", 
+                                        rv$time_two(), ", ", rv$rate_two(), ")")
+            
+            odbc::dbGetQuery(poolConn, add_ppt_query)
+            odbc::dbGetQuery(poolConn, add_ppr_one_query)
+            odbc::dbGetQuery(poolConn, add_ppr_two_query)
+          }
         }else{
+          
+          #edit records
           edit_ppt_query <- paste0(
             "UPDATE fieldwork.porous_pavement SET smp_id = '", input$smp_id, "', test_date = '", input$date, 
             "', surface_type_lookup_uid = ",  rv$type(),
@@ -242,15 +384,58 @@ porous_pavementServer <- function(id, parent_session, surface_type, poolConn, co
             "', test_location = ", rv$test_location(),
             ", map_in_site_folder = ", rv$folder(), 
             ", data_in_spreadsheet = ", rv$data(),
+            ", ring_diameter_in = ", rv$ring_dia(), 
+            ", prewet_time_s = ", rv$prewet_time(), 
+            ", prewet_rate_inhr = ", rv$pw_rate(),
             " WHERE porous_pavement_uid = '", rv$ppt_table_db()[input$ppt_table_rows_selected, 1], "'")
           
-          
           dbGetQuery(poolConn, edit_ppt_query)
+          
+          #if test one is already there, edit it. if it's not, add it
+          if(!is.na(rv$ppt_table_db()$test_one_porous_pavement_results_uid[input$ppt_table_rows_selected])){
+            edit_ppr_one_query <- paste0(
+              "UPDATE fieldwork.porous_pavement_results SET weight_lbs =", rv$weight(),
+              ", time_s = ", rv$time_one(),
+              ", rate_inhr = ", rv$rate_one(),
+              " WHERE porous_pavement_results_uid = ", rv$ppt_table_db()$test_one_porous_pavement_results_uid[input$ppt_table_rows_selected]
+            )
+            dbGetQuery(poolConn, edit_ppr_one_query)
+          
+          }else{
+            #add first test to results
+            add_ppr_one_query <- paste0("INSERT INTO fieldwork.porous_pavement_results (porous_pavement_uid, weight_lbs, time_s, rate_inhr) 
+                                      vALUES ('", rv$ppt_table_db()[input$ppt_table_rows_selected, 1], "', ", rv$weight(), ", ", 
+                                        rv$time_one(), ", ", rv$rate_one(), ")")
+            
+            odbc::dbGetQuery(poolConn, add_ppr_one_query)
+          }
+          
+          #if test two is already there, edit it. if not, add it
+          if(!is.na(rv$ppt_table_db()$test_two_porous_pavement_results_uid[input$ppt_table_rows_selected])){
+
+            edit_ppr_two_query <- paste0(
+              "UPDATE fieldwork.porous_pavement_results SET weight_lbs =", rv$weight(),
+              ", time_s = ", rv$time_two(),
+              ", rate_inhr = ", rv$rate_two(),
+              " WHERE porous_pavement_results_uid = ", rv$ppt_table_db()$test_two_porous_pavement_results_uid[input$ppt_table_rows_selected]
+            )
+            
+            dbGetQuery(poolConn, edit_ppr_two_query)
+          
+          }else{
+            #add second test to results
+            add_ppr_two_query <- paste0("INSERT INTO fieldwork.porous_pavement_results (porous_pavement_uid, weight_lbs, time_s, rate_inhr) 
+                                      vALUES ('", rv$ppt_table_db()[input$ppt_table_rows_selected, 1], "', ", rv$weight(), ", ", 
+                                        rv$time_two(), ", ", rv$rate_two(), ")")
+            
+            odbc::dbGetQuery(poolConn, add_ppr_two_query)
+          }
         }
         
         if(length(input$future_ppt_table_rows_selected) > 0){
           odbc::dbGetQuery(poolConn, paste0("DELETE FROM fieldwork.future_porous_pavement 
-                                            WHERE future_porous_pavement_uid = '", rv$future_ppt_table_db()[input$future_ppt_table_rows_selected, 1], "'"))
+                                            WHERE future_porous_pavement_uid = '", 
+                                            rv$future_ppt_table_db()[input$future_ppt_table_rows_selected, 1], "'"))
         }
         
         #re-run query
@@ -267,7 +452,14 @@ porous_pavementServer <- function(id, parent_session, surface_type, poolConn, co
         reset("location")
         reset("data")
         reset("priority")
-        reset("folder")
+        reset("ring_dia")
+        reset("prewet_time")
+        reset("pw_rate")
+        reset("weight")
+        reset("time_one")
+        reset("time_two")
+        reset("rate_one")
+        reset("rate_two")
       })
       
       #clear fields on click
@@ -287,23 +479,32 @@ porous_pavementServer <- function(id, parent_session, surface_type, poolConn, co
         reset("data")
         reset("folder")
         reset("priority")
+        reset("ring_dia")
+        reset("prewet_time")
+        reset("pw_rate")
+        reset("weight")
+        reset("time_one")
+        reset("time_two")
+        reset("rate_one")
+        reset("rate_two")
         removeModal()
       })
       
       #View all Porous Pavement ------
       
       #query full porous pavement view
-      rv$all_query <- reactive(paste0("SELECT * FROM fieldwork.porous_pavement_full ORDER BY test_date DESC"))
+      rv$all_query <- reactive(paste0("SELECT * FROM fieldwork.porous_pavement_wide ORDER BY test_date DESC"))
       
       rv$all_ppt_table_db <- reactive(dbGetQuery(poolConn, rv$all_query())) 
       
       rv$all_ppt_table <- reactive(rv$all_ppt_table_db() %>% 
                                      mutate(across(where(is.POSIXct), trunc, "days")) %>% 
                                      mutate(across(where(is.POSIXlt), as.character)) %>% 
+                                     mutate(average_rate_inhr = round(average_rate_inhr, 1)) %>% 
                                      mutate(across(c("data_in_spreadsheet", "map_in_site_folder"), 
                                                ~ case_when(. == 1 ~ "Yes", 
                                                               . == 0 ~ "No"))) %>% 
-                                     dplyr::select("test_date", "smp_id", "project_name", "surface_type", "phase", "test_location", "data_in_spreadsheet", "map_in_site_folder"))
+                                     dplyr::select("test_date", "smp_id", "project_name", "surface_type", "phase", "test_location", "average_rate_inhr", "data_in_spreadsheet", "map_in_site_folder"))
       
       output$all_ppt_table <- renderReactable(
             reactable(rv$all_ppt_table(), 
@@ -313,6 +514,7 @@ porous_pavementServer <- function(id, parent_session, surface_type, poolConn, co
                     project_name = colDef(name = "Project Name"),
                     surface_type = colDef(name = "Surface Type"),
                     phase = colDef(name = "Construction Phase"),
+                    average_rate_inhr = colDef(name = "Avg Rate (in/hr)"),
                     test_location  = colDef(name = "Test Location"),
                     data_in_spreadsheet = colDef(name = "Date In Spreadsheet", style = function(value){
                       if(is.na(value) | value == "No"){
