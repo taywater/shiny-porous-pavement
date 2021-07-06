@@ -46,7 +46,7 @@ porous_pavementUI <- function(id, label = "porous_pavement", html_req, surface_t
                                                     actionButton(ns("future_ppt"), "Add Future Porous Pavement Test")),
                                    actionButton(ns("add_ppt"), "Add Porous Pavement Test"), 
                                    actionButton(ns("clear_ppt"), "Clear All Fields"),
-                                   actionButton(ns("print_check"), "Print Check"),
+                                   #actionButton(ns("print_check"), "Print Check"),
                                    fluidRow(
                                      HTML(paste(html_req(""), " indicates required field for complete tests. ", future_req(""), " indicates required field for future tests.")))
                       ), 
@@ -64,7 +64,16 @@ porous_pavementUI <- function(id, label = "porous_pavement", html_req, surface_t
              ), 
              tabPanel("View Future Porous Pavement Tests", value = ns("view_future_ppt"), 
                       titlePanel("All Future Porous Pavement Tests"), 
-                      DTOutput(ns("all_future_ppt_table")))
+                      DTOutput(ns("all_future_ppt_table"))), 
+             tabPanel("View Averages", value = ns("view_avg"), 
+                      fluidRow(column(6, selectizeInput(ns("smp_id_avg"), "SMP ID", choices = NULL, multiple = TRUE,
+                                     options = list(
+                                       placeholder = 'Select an Option',
+                                       onInitialize = I('function() { this.setValue(""); }')
+                                     ))),
+                               column(6, downloadButton(ns("download_avg"), "Download Averages"))),
+                      titlePanel("View Averages"), 
+                      DTOutput(ns("averages")))
   )
   
 }
@@ -80,6 +89,9 @@ porous_pavementServer <- function(id, parent_session, surface_type, poolConn, co
       
       #update SMP IDs
       updateSelectizeInput(session, "smp_id", choices = smp_id, selected = character(0), server = TRUE)
+      
+      #update SMP IDs
+      updateSelectizeInput(session, "smp_id_avg", choices = smp_id, selected = character(0), server = TRUE)
       
       #initialize porous pavement testing (ppt) reactiveValues
       rv <- reactiveValues()
@@ -289,15 +301,34 @@ porous_pavementServer <- function(id, parent_session, surface_type, poolConn, co
       #   print(rv$pw_rate_inhr())
       # })
       # 
-      observeEvent(input$print_check, {
-       print(rv$ring_dia())
-        print(rv$prewet_time())
-        print(rv$pw_rate())
-        print(rv$weight())
-        print(rv$time_one())
-        print(rv$rate_one())
+      
+      rv$weight_react <- reactive(if(!is.na(input$prewet_time)){
+                                  if(input$prewet_time < 30){
+        41.7
+      }else if(input$prewet_time >= 30){
+        8.34
+      }
+      }else{
+        8.34
       }
       )
+      
+      observeEvent(input$prewet_time,{
+        if(length(input$ppt_table_rows_selected) == 0){
+          updateSelectInput(session = session, "weight", selected = rv$weight_react())
+        }
+      }
+      )
+      
+      # observeEvent(input$print_check, {
+      #  print(rv$ring_dia())
+      #   print(rv$prewet_time())
+      #   print(rv$pw_rate())
+      #   print(rv$weight())
+      #   print(rv$time_one())
+      #   print(rv$rate_one())
+      # }
+      # )
       
       #on click 
       observeEvent(input$future_ppt, {
@@ -587,7 +618,35 @@ porous_pavementServer <- function(id, parent_session, surface_type, poolConn, co
         })
       })
       
+      #view porous pavement averages 
       
+      rv$average_query <- "SELECT * FROM fieldwork.porous_pavement_smp_averages"
+      rv$average_table_db <- reactive(odbc::dbGetQuery(poolConn, rv$average_query)%>% 
+                                        mutate(across(where(is.POSIXct), trunc, "days")) %>% 
+                                        mutate(across(where(is.POSIXlt), as.character)) %>% 
+                                        mutate(avg_rate_inhr = round(avg_rate_inhr, 1)))
+      
+      rv$average_table <- reactive(if(length(input$smp_id_avg) == 0){
+        rv$average_table_db()
+      }else{rv$average_table_db() %>% dplyr::filter(smp_id %in% input$smp_id_avg)
+      })
+      
+      output$averages <- renderDT(
+        rv$average_table(), 
+        selection = 'single', 
+        style = 'bootstrap', 
+        class = 'table-response, table-hover', 
+        colnames = c('SMP ID', 'Project Name', 'Test Date', 'Average Rate (in/hr)')
+      )
+      
+      output$download_avg <- downloadHandler(
+        filename = function(){
+          paste("porous_pavement_smp_averages_", Sys.Date(), ".csv", sep = "")
+        }, 
+        content = function(file){
+          write.csv(rv$average_table(), file, row.names = FALSE)
+        }
+      )
       
     }
   )
