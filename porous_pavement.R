@@ -1,11 +1,15 @@
 #Porous pavement tabs
-#This has a tab dropdown with three tabs, one for adding PPTs and one for viewing all PPTs and one for viewing future PPTs
+#This has a tab dropdown with four tabs, one for adding PPTs and one for viewing all PPTs and one for viewing future PPTs and one for viewing averages
+
+#1.0 UI ----
 
 porous_pavementUI <- function(id, label = "porous_pavement", html_req, surface_type, priority, con_phase, future_req){
   ns <- NS(id)
   navbarPage("Porous Pavement", theme = shinytheme("cerulean"), id = "inTabset",
+             #1.1 Add/Edit ----
              tabPanel("Add/Edit Porous Pavement Test", value = "ppt_tab", 
                       titlePanel("Add Porous Pavement Test"), 
+                      #1.1.1 Sidebar Panel ----
                       sidebarPanel(selectizeInput(ns("smp_id"), future_req(html_req("SMP ID")), choices = NULL, 
                                                   options = list(
                                                     placeholder = 'Select an Option',
@@ -50,6 +54,7 @@ porous_pavementUI <- function(id, label = "porous_pavement", html_req, surface_t
                                    fluidRow(
                                      HTML(paste(html_req(""), " indicates required field for complete tests. ", future_req(""), " indicates required field for future tests.")))
                       ), 
+                      #1.1.2 Main Panel -----
                       mainPanel(
                         conditionalPanel(condition = "input.smp_id",
                                          ns = ns, 
@@ -58,13 +63,16 @@ porous_pavementUI <- function(id, label = "porous_pavement", html_req, surface_t
                                          h4(textOutput(ns("header"))), 
                                          DTOutput(ns("ppt_table"))))
              ), 
+             #1.2 View Completed Tests ----
              tabPanel("View Porous Pavement Tests", value = ns("view_ppt"), 
                       titlePanel("All Porous Pavement Tests"), 
                       reactableOutput(ns("all_ppt_table"))
              ), 
+             # 1.3 View Future Tests ---------------------------------------------------
              tabPanel("View Future Porous Pavement Tests", value = ns("view_future_ppt"), 
                       titlePanel("All Future Porous Pavement Tests"), 
                       DTOutput(ns("all_future_ppt_table"))), 
+             #1.4 View Averages -----
              tabPanel("View Averages", value = ns("view_avg"), 
                       fluidRow(column(6, selectizeInput(ns("smp_id_avg"), "SMP ID", choices = NULL, multiple = TRUE,
                                      options = list(
@@ -78,12 +86,15 @@ porous_pavementUI <- function(id, label = "porous_pavement", html_req, surface_t
   
 }
 
+#2.0 Server Function ----
+
 porous_pavementServer <- function(id, parent_session, surface_type, poolConn, con_phase, smp_id){
   
   moduleServer(
     id, 
     function(input, output, session){
   
+      #2.0.1 Initial Set up -----
       #define ns to use in modals
       ns <- session$ns
       
@@ -95,6 +106,9 @@ porous_pavementServer <- function(id, parent_session, surface_type, poolConn, co
       
       #initialize porous pavement testing (ppt) reactiveValues
       rv <- reactiveValues()
+      
+      #2.1 Add/Edit ----
+      #2.1.1 Headers ----
       
       #Get the Project name, combine it with SMP ID, and create a reactive header
       rv$smp_and_name_step <- reactive(odbc::dbGetQuery(poolConn, paste0("select smp_id, project_name from project_names where smp_id = '", input$smp_id, "'")))
@@ -109,18 +123,7 @@ porous_pavementServer <- function(id, parent_session, surface_type, poolConn, co
         paste("Future Porous Pavement Tests at", rv$smp_and_name())
       )
       
-      #query full porous pavement view
-      rv$query <- reactive(paste0("SELECT * FROM fieldwork.porous_pavement_wide WHERE smp_id = '", input$smp_id, "'"))
-      
-      rv$ppt_table_db <- reactive(dbGetQuery(poolConn, rv$query()))
-      
-      #adjust table for viewing
-      rv$ppt_table <- reactive(rv$ppt_table_db() %>% 
-                                 mutate(across(where(is.POSIXct), trunc, "days")) %>% 
-                                 mutate(across(where(is.POSIXlt), as.character)) %>%
-                                 mutate(average_rate_inhr = round(average_rate_inhr, 1)) %>% 
-                                 dplyr::select("test_date", "surface_type", "phase", "test_location", "average_rate_inhr"))
-      
+      #2.1.2 toggle states based on what's selected ----
       #toggle state (enable/disable) buttons based on whether system id, test date, and type are selected (this is shinyjs)
       observe(toggleState(id = "add_ppt", condition = nchar(input$smp_id) > 0 & length(input$date) > 0 & 
                             nchar(input$surface_type) >0 & nchar(input$con_phase) > 0))
@@ -138,6 +141,27 @@ porous_pavementServer <- function(id, parent_session, surface_type, poolConn, co
       observe(toggleState(id = "time_one", condition = length(input$date) > 0))
       observe(toggleState(id = "time_two", condition = length(input$date) > 0))
       
+      #add/edit button toggle
+      rv$label <- reactive(if(length(input$ppt_table_rows_selected) == 0) "Add New" else "Edit Selected")
+      observe(updateActionButton(session, "add_ppt", label = rv$label()))
+      
+      rv$future_label <- reactive(if(length(input$future_ppt_table_rows_selected) == 0) "Add Future Porous Pavement Test" 
+                                  else "Edit Selected Future PPT")
+      observe(updateActionButton(session, "future_ppt", label = rv$future_label()))
+      
+      #2.1.3 SMP views -----
+      #query full smp porous pavement view
+      rv$query <- reactive(paste0("SELECT * FROM fieldwork.porous_pavement_wide WHERE smp_id = '", input$smp_id, "'"))
+      
+      rv$ppt_table_db <- reactive(dbGetQuery(poolConn, rv$query()))
+      
+      #adjust table for viewing
+      rv$ppt_table <- reactive(rv$ppt_table_db() %>% 
+                                 mutate(across(where(is.POSIXct), trunc, "days")) %>% 
+                                 mutate(across(where(is.POSIXlt), as.character)) %>%
+                                 mutate(average_rate_inhr = round(average_rate_inhr, 1)) %>% 
+                                 dplyr::select("test_date", "surface_type", "phase", "test_location", "average_rate_inhr"))
+      
       #render datatable  for porous pavement
       output$ppt_table <- renderDT(
         rv$ppt_table(), 
@@ -146,6 +170,7 @@ porous_pavementServer <- function(id, parent_session, surface_type, poolConn, co
         class = 'table-responsive, table-hover', 
         colnames = c('Test Date', 'Surface Type', 'Construction Phase', 'Test Location', 'Average Rate (in/hr)')
       )
+      
       
       #query future PPTs
       future_ppt_table_query <- reactive(paste0("SELECT * FROM fieldwork.future_porous_pavement_full 
@@ -156,9 +181,6 @@ porous_pavementServer <- function(id, parent_session, surface_type, poolConn, co
       rv$future_ppt_table <- reactive(rv$future_ppt_table_db() %>% 
                                         dplyr::select("smp_id", "surface_type", "phase", "test_location", "field_test_priority"))
       
-      rv$priority_lookup_uid_query <- reactive(paste0("select field_test_priority_lookup_uid from fieldwork.field_test_priority_lookup where field_test_priority = '", input$priority, "'"))
-      rv$priority_lookup_uid_step <- reactive(dbGetQuery(poolConn, rv$priority_lookup_uid_query()))
-      rv$priority_lookup_uid <- reactive(if(nchar(input$priority) == 0) "NULL" else paste0("'", rv$priority_lookup_uid_step(), "'"))
       
       output$future_ppt_table <- renderDT(
         rv$future_ppt_table(), 
@@ -168,6 +190,10 @@ porous_pavementServer <- function(id, parent_session, surface_type, poolConn, co
         colnames = c('SMP ID', 'Surface Type', 'Construction Phase', 'Test Location', 'Priority') 
       )
       
+      
+      #2.1.4 Editing upon row selection ----
+      
+      #future table
       observeEvent(input$future_ppt_table_rows_selected, {
         #deselect other table
         dataTableProxy('ppt_table') %>% selectRows(NULL)
@@ -184,6 +210,7 @@ porous_pavementServer <- function(id, parent_session, surface_type, poolConn, co
         
       })
       
+      #present table
       observeEvent(input$ppt_table_rows_selected,{ 
         
         #deselect other table
@@ -213,6 +240,7 @@ porous_pavementServer <- function(id, parent_session, surface_type, poolConn, co
         
       })
       
+      #2.1.5 Prepare Inputs -----
       #change type from text to uid
       rv$surface_type <- reactive(surface_type %>% dplyr::filter(surface_type == input$surface_type) %>% 
                                     select(surface_type_lookup_uid) %>% pull())
@@ -233,6 +261,10 @@ porous_pavementServer <- function(id, parent_session, surface_type, poolConn, co
       rv$ring_dia <- reactive(if(nchar(input$ring_dia) == 0) "NULL" else paste0("'", input$ring_dia, "'"))
       rv$prewet_time <- reactive(if(is.na(input$prewet_time)) "NULL" else paste0("'", input$prewet_time, "'"))
       
+      rv$priority_lookup_uid_query <- reactive(paste0("select field_test_priority_lookup_uid from fieldwork.field_test_priority_lookup where field_test_priority = '", input$priority, "'"))
+      rv$priority_lookup_uid_step <- reactive(dbGetQuery(poolConn, rv$priority_lookup_uid_query()))
+      rv$priority_lookup_uid <- reactive(if(nchar(input$priority) == 0) "NULL" else paste0("'", rv$priority_lookup_uid_step(), "'"))
+      
       rv$pw_rate <- reactive(if(is.na(input$pw_rate)) "NULL" else paste0("'", input$pw_rate, "'"))
       
       rv$weight <- reactive(if(nchar(input$weight) == 0) "NULL" else paste0("'", input$weight, "'"))
@@ -243,15 +275,7 @@ porous_pavementServer <- function(id, parent_session, surface_type, poolConn, co
       rv$rate_one <- reactive(if(is.na(input$rate_one)) "NULL" else paste0("'", input$rate_one, "'"))
       rv$rate_two <- reactive(if(is.na(input$rate_two)) "NULL" else paste0("'", input$rate_two, "'"))
       
-      #add/edit button toggle
-      rv$label <- reactive(if(length(input$ppt_table_rows_selected) == 0) "Add New" else "Edit Selected")
-      observe(updateActionButton(session, "add_ppt", label = rv$label()))
-      
-      rv$future_label <- reactive(if(length(input$future_ppt_table_rows_selected) == 0) "Add Future Porous Pavement Test" 
-                                  else "Edit Selected Future PPT")
-      observe(updateActionButton(session, "future_ppt", label = rv$future_label()))
-      
-      
+      #2.1.6 Do the Math ----
       observeEvent(rv$prewet_time(), {
         
         if(rv$prewet_time() > 599.9){
@@ -267,7 +291,6 @@ porous_pavementServer <- function(id, parent_session, surface_type, poolConn, co
       
       #calculate infiltration rate
       #I = (KM)/(D^2*t)
-      #K = 126870
       k <- 126870
       #D = ring diameter (in)
       #M = 8.34 lbs - 1 gal of water 
@@ -319,17 +342,8 @@ porous_pavementServer <- function(id, parent_session, surface_type, poolConn, co
         }
       }
       )
-      
-      # observeEvent(input$print_check, {
-      #  print(rv$ring_dia())
-      #   print(rv$prewet_time())
-      #   print(rv$pw_rate())
-      #   print(rv$weight())
-      #   print(rv$time_one())
-      #   print(rv$rate_one())
-      # }
-      # )
-      
+
+      #2.1.7 ADD/EDIT/CLEAR Buttons ----
       #on click 
       observeEvent(input$future_ppt, {
         if(length(input$future_ppt_table_rows_selected) == 0){
@@ -521,8 +535,9 @@ porous_pavementServer <- function(id, parent_session, surface_type, poolConn, co
         removeModal()
       })
       
-      #View all Porous Pavement ------
+      #2.2 View all Porous Pavement Tests (Completed Tests) ------
       
+      #2.2.1 Query and View Tables ----
       #query full porous pavement view
       rv$all_query <- reactive(paste0("SELECT * FROM fieldwork.porous_pavement_wide ORDER BY test_date DESC"))
       
@@ -577,6 +592,7 @@ porous_pavementServer <- function(id, parent_session, surface_type, poolConn, co
         )
       )
       
+      #2.2.2 Click a row ----
       observeEvent(input$ppt_selected, {
         # do not use shinyjs::reset() - it is too slow and will go after updating to the smp_id, resulting in a cleared field
         updateSelectizeInput(session, "smp_id", choices = smp_id, 
@@ -590,7 +606,8 @@ porous_pavementServer <- function(id, parent_session, surface_type, poolConn, co
         })
       })
       
-      #View all Future Porous Pavement ----
+      #2.3 View all Future Porous Pavement ----
+      #2.3.1 query and view table ----
       rv$all_future_ppt_query <- "SELECT * FROM fieldwork.future_porous_pavement_full order by field_test_priority_lookup_uid"
       rv$all_future_ppt_table_db <- reactive(odbc::dbGetQuery(poolConn, rv$all_future_ppt_query))
       rv$all_future_ppt_table <- reactive(rv$all_future_ppt_table_db() %>% 
@@ -605,6 +622,7 @@ porous_pavementServer <- function(id, parent_session, surface_type, poolConn, co
         rownames = FALSE
       )
       
+      #2.3.2. Click a row ----
       #on click in future porous pavement table
       #update smp id and change tabs
       #then select test
@@ -618,8 +636,8 @@ porous_pavementServer <- function(id, parent_session, surface_type, poolConn, co
         })
       })
       
-      #view porous pavement averages 
-      
+      #2.4 View porous pavement averages ----- 
+      #2.4.1 Query and view table -----
       rv$average_query <- "SELECT * FROM fieldwork.porous_pavement_smp_averages"
       rv$average_table_db <- reactive(odbc::dbGetQuery(poolConn, rv$average_query)%>% 
                                         mutate(across(where(is.POSIXct), trunc, "days")) %>% 
@@ -639,6 +657,7 @@ porous_pavementServer <- function(id, parent_session, surface_type, poolConn, co
         colnames = c('SMP ID', 'Project Name', 'Test Date', 'Average Rate (in/hr)')
       )
       
+      #2.4.2 Download -----
       output$download_avg <- downloadHandler(
         filename = function(){
           paste("porous_pavement_smp_averages_", Sys.Date(), ".csv", sep = "")
