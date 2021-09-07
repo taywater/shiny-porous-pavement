@@ -111,7 +111,7 @@ porous_pavementServer <- function(id, parent_session, surface_type, poolConn, co
       #2.1.1 Headers ----
       
       #Get the Project name, combine it with SMP ID, and create a reactive header
-      rv$smp_and_name_step <- reactive(odbc::dbGetQuery(poolConn, paste0("select smp_id, project_name from project_names where smp_id = '", input$smp_id, "'")))
+      rv$smp_and_name_step <- reactive(odbc::dbGetQuery(poolConn, paste0("select smp_id, project_name from fieldwork.project_names where smp_id = '", input$smp_id, "'")))
       
       rv$smp_and_name <- reactive(paste(rv$smp_and_name_step()$smp_id[1], rv$smp_and_name_step()$project_name[1]))
       

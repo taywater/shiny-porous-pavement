@@ -29,9 +29,9 @@ library(reactable)
 options(DT.options = list(pageLength = 15))
 
 #set db connection
-#using a pool connection so separate connnections are unified
+#using a pool connection so separate connections are unified
 #gets environmental variables saved in local or pwdrstudio environment
-poolConn <- dbPool(odbc(), dsn = "mars_testing", uid = Sys.getenv("shiny_uid"), pwd = Sys.getenv("shiny_pwd"))
+poolConn <- dbPool(odbc(), dsn = "mars_data", uid = Sys.getenv("new_shiny_uid"), pwd = Sys.getenv("shiny_pwd"))
 
 #disconnect from db on stop 
 onStop(function(){
@@ -105,7 +105,7 @@ server <- function(input, output, session) {
   con_phase <- dbGetQuery(poolConn, "select * from fieldwork.con_phase_lookup")
   
   #porous pavement smp ids
-  pp_smp_id <- odbc::dbGetQuery(poolConn, paste0("select distinct smp_id from smpid_facilityid_componentid where asset_type = 'Permeable Pavement'")) %>% 
+  pp_smp_id <- odbc::dbGetQuery(poolConn, paste0("select distinct smp_id from external.assets where asset_type = 'Permeable Pavement'")) %>% 
     dplyr::arrange(smp_id) %>% 
     dplyr::pull()
   
