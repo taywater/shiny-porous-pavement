@@ -111,7 +111,7 @@ porous_pavementServer <- function(id, parent_session, surface_type, poolConn, co
       #2.1.1 Headers ----
       
       #Get the Project name, combine it with SMP ID, and create a reactive header
-      rv$smp_and_name_step <- reactive(odbc::dbGetQuery(poolConn, paste0("select smp_id, project_name from project_names where smp_id = '", input$smp_id, "'")))
+      rv$smp_and_name_step <- reactive(odbc::dbGetQuery(poolConn, paste0("select smp_id, project_name from external.mat_project_names where smp_id = '", input$smp_id, "'")))
       
       rv$smp_and_name <- reactive(paste(rv$smp_and_name_step()$smp_id[1], rv$smp_and_name_step()$project_name[1]))
       
@@ -151,7 +151,7 @@ porous_pavementServer <- function(id, parent_session, surface_type, poolConn, co
       
       #2.1.3 SMP views -----
       #query full smp porous pavement view
-      rv$query <- reactive(paste0("SELECT * FROM fieldwork.porous_pavement_wide WHERE smp_id = '", input$smp_id, "'"))
+      rv$query <- reactive(paste0("SELECT * FROM fieldwork.viw_porous_pavement_wide WHERE smp_id = '", input$smp_id, "'"))
       
       rv$ppt_table_db <- reactive(dbGetQuery(poolConn, rv$query()))
       
@@ -173,7 +173,7 @@ porous_pavementServer <- function(id, parent_session, surface_type, poolConn, co
       
       
       #query future PPTs
-      future_ppt_table_query <- reactive(paste0("SELECT * FROM fieldwork.future_porous_pavement_full 
+      future_ppt_table_query <- reactive(paste0("SELECT * FROM fieldwork.viw_future_porous_pavement_full 
                                                 WHERE smp_id = '", input$smp_id, "' 
                                                 order by field_test_priority_lookup_uid"))
       rv$future_ppt_table_db <- reactive(odbc::dbGetQuery(poolConn, future_ppt_table_query()))
@@ -539,7 +539,7 @@ porous_pavementServer <- function(id, parent_session, surface_type, poolConn, co
       
       #2.2.1 Query and View Tables ----
       #query full porous pavement view
-      rv$all_query <- reactive(paste0("SELECT * FROM fieldwork.porous_pavement_wide ORDER BY test_date DESC"))
+      rv$all_query <- reactive(paste0("SELECT * FROM fieldwork.viw_porous_pavement_wide ORDER BY test_date DESC"))
       
       rv$all_ppt_table_db <- reactive(dbGetQuery(poolConn, rv$all_query())) 
       
@@ -608,7 +608,7 @@ porous_pavementServer <- function(id, parent_session, surface_type, poolConn, co
       
       #2.3 View all Future Porous Pavement ----
       #2.3.1 query and view table ----
-      rv$all_future_ppt_query <- "SELECT * FROM fieldwork.future_porous_pavement_full order by field_test_priority_lookup_uid"
+      rv$all_future_ppt_query <- "SELECT * FROM fieldwork.viw_future_porous_pavement_full order by field_test_priority_lookup_uid"
       rv$all_future_ppt_table_db <- reactive(odbc::dbGetQuery(poolConn, rv$all_future_ppt_query))
       rv$all_future_ppt_table <- reactive(rv$all_future_ppt_table_db() %>% 
                                             dplyr::select("smp_id", "project_name", "surface_type", "phase", "test_location", "field_test_priority"))
@@ -638,7 +638,7 @@ porous_pavementServer <- function(id, parent_session, surface_type, poolConn, co
       
       #2.4 View porous pavement averages ----- 
       #2.4.1 Query and view table -----
-      rv$average_query <- "SELECT * FROM fieldwork.porous_pavement_smp_averages"
+      rv$average_query <- "SELECT * FROM fieldwork.viw_porous_pavement_smp_averages"
       rv$average_table_db <- reactive(odbc::dbGetQuery(poolConn, rv$average_query)%>% 
                                         mutate(across(where(is.POSIXct), trunc, "days")) %>% 
                                         mutate(across(where(is.POSIXlt), as.character)) %>% 

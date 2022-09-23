@@ -31,7 +31,7 @@ options(DT.options = list(pageLength = 15))
 #set db connection
 #using a pool connection so separate connnections are unified
 #gets environmental variables saved in local or pwdrstudio environment
-poolConn <- dbPool(odbc(), dsn = "mars_testing", uid = Sys.getenv("shiny_uid"), pwd = Sys.getenv("shiny_pwd"))
+poolConn <- dbPool(odbc(), dsn = "mars14_data", uid = Sys.getenv("shiny_uid"), pwd = Sys.getenv("shiny_pwd"))
 
 #disconnect from db on stop 
 onStop(function(){
@@ -56,10 +56,10 @@ ui <- function(req){
   #define global variables that will be required each time the UI runs
   
   #porous pavement surface types
-  surface_type <- dbGetQuery(poolConn, "select * from fieldwork.surface_type_lookup")
+  surface_type <- dbGetQuery(poolConn, "select * from fieldwork.tbl_surface_type_lookup")
   
   #construction phase types
-  con_phase <- dbGetQuery(poolConn, "select * from fieldwork.con_phase_lookup")
+  con_phase <- dbGetQuery(poolConn, "select * from fieldwork.tbl_con_phase_lookup")
   
   #this function adds a little red star to indicate that a field is required. It uses HTML, hence "html_req"
   html_req <- function(label){
@@ -72,7 +72,7 @@ ui <- function(req){
   }
   
   #field test priority
-  priority <- dbGetQuery(poolConn, "select * from fieldwork.field_test_priority_lookup")
+  priority <- dbGetQuery(poolConn, "select * from fieldwork.tbl_field_test_priority_lookup")
   
   # 1.2: actual UI------------------------
   
@@ -99,14 +99,14 @@ server <- function(input, output, session) {
   #define global variables that will be defined each time server runs
   
   #porous pavement surface types
-  surface_type <- dbGetQuery(poolConn, "select * from fieldwork.surface_type_lookup")
+  surface_type <- dbGetQuery(poolConn, "select * from fieldwork.tbl_surface_type_lookup")
   
   #con phase
-  con_phase <- dbGetQuery(poolConn, "select * from fieldwork.con_phase_lookup")
+  con_phase <- dbGetQuery(poolConn, "select * from fieldwork.tbl_con_phase_lookup")
   
   #porous pavement smp ids
-  pp_smp_id <- odbc::dbGetQuery(poolConn, paste0("select distinct smp_id from smpid_facilityid_componentid where asset_type = 'Permeable Pavement'")) %>% 
-    dplyr::arrange(smp_id) %>% 
+  pp_smp_id <- odbc::dbGetQuery(poolConn, paste0("select distinct smp_id from external.mat_assets where asset_type = 'Permeable Pavement'")) %>% 
+    dplyr::arrange(smp_id) %>%  
     dplyr::pull()
   
   # 2.2: Server Module functions ---------------------------
