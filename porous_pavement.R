@@ -5,7 +5,7 @@
 
 porous_pavementUI <- function(id, label = "porous_pavement", html_req, surface_type, priority, con_phase, future_req){
   ns <- NS(id)
-  navbarPage("Porous Pavement", theme = shinytheme("cerulean"), id = "inTabset",
+  navbarPage("Porous Pavement", id = "inTabset", #theme = shinytheme("cerulean"),
              #1.1 Add/Edit ----
              tabPanel("Add/Edit Porous Pavement Test", value = "ppt_tab", 
                       titlePanel("Add Porous Pavement Test"), 
@@ -348,14 +348,14 @@ porous_pavementServer <- function(id, parent_session, surface_type, poolConn, co
       observeEvent(input$future_ppt, {
         if(length(input$future_ppt_table_rows_selected) == 0){
           #add to future_porous_pavement
-          add_future_ppt_query <- paste0("INSERT INTO fieldwork.future_porous_pavement (smp_id, surface_type_lookup_uid, 
+          add_future_ppt_query <- paste0("INSERT INTO fieldwork.tbl_future_porous_pavement (smp_id, surface_type_lookup_uid, 
                                           con_phase_lookup_uid, test_location, field_test_priority_lookup_uid)
                                          VALUES ('", input$smp_id, "', ", rv$type(), ", ", rv$phase_null(), ", ", rv$test_location(), ", ", 
                                          rv$priority_lookup_uid(), ")")
           
           odbc::dbGetQuery(poolConn, add_future_ppt_query)
         }else{
-          edit_future_ppt_query <- paste0("UPDATE fieldwork.future_porous_pavement SET smp_id = '", input$smp_id, "', 
+          edit_future_ppt_query <- paste0("UPDATE fieldwork.tbl_future_porous_pavement SET smp_id = '", input$smp_id, "', 
                                            surface_type_lookup_uid = ", rv$type(),
                                           ", con_phase_lookup_uid = ", rv$phase_null(),
                                           ", test_location = ", rv$test_location(),
@@ -387,7 +387,7 @@ porous_pavementServer <- function(id, parent_session, surface_type, poolConn, co
           #if less, then prepare to add to record and results tables
           if(rv$prewet_time() > 599){
             #add to porous_pavement
-            add_ppt_query <- paste0("INSERT INTO fieldwork.porous_pavement (test_date, smp_id, surface_type_lookup_uid, con_phase_lookup_uid,
+            add_ppt_query <- paste0("INSERT INTO fieldwork.tbl_porous_pavement (test_date, smp_id, surface_type_lookup_uid, con_phase_lookup_uid,
                               test_location, data_in_spreadsheet, map_in_site_folder, ring_diameter_in, prewet_time_s, prewet_rate_inhr)
           	                  VALUES ('", input$date, "','", input$smp_id, "',",  rv$type(), ",", rv$phase(), ",", rv$test_location(), ",",
           	                                rv$data(), ", ", rv$folder(), ", ", rv$ring_dia(), ", ", rv$prewet_time(), ", ", rv$pw_rate(), ")")
@@ -400,19 +400,19 @@ porous_pavementServer <- function(id, parent_session, surface_type, poolConn, co
             #then add to the porous_pavement_results table
             #use the MAX(porous_pavement_uid) from pp table to get the PP UID of the most recent addition to the table (calculated by SERIAL), which is the current addition
             #add to porous_pavement
-            add_ppt_query <- paste0("INSERT INTO fieldwork.porous_pavement (test_date, smp_id, surface_type_lookup_uid, con_phase_lookup_uid,
+            add_ppt_query <- paste0("INSERT INTO fieldwork.tbl_porous_pavement (test_date, smp_id, surface_type_lookup_uid, con_phase_lookup_uid,
                               test_location, data_in_spreadsheet, map_in_site_folder, ring_diameter_in, prewet_time_s, prewet_rate_inhr)
           	                  VALUES ('", input$date, "','", input$smp_id, "',",  rv$type(), ",", rv$phase(), ",", rv$test_location(), ",", 
                                     rv$data(), ", ", rv$folder(), ", ", rv$ring_dia(), ", ", rv$prewet_time(), ", ", rv$pw_rate(), ")") 
             
             #add first test to results
-            add_ppr_one_query <- paste0("INSERT INTO fieldwork.porous_pavement_results (porous_pavement_uid, weight_lbs, time_s, rate_inhr) 
-                                      vALUES ((SELECT MAX(porous_pavement_uid) FROM fieldwork.porous_pavement), ", rv$weight(), ", ", 
+            add_ppr_one_query <- paste0("INSERT INTO fieldwork.tbl_porous_pavement_results (porous_pavement_uid, weight_lbs, time_s, rate_inhr) 
+                                      vALUES ((SELECT MAX(porous_pavement_uid) FROM fieldwork.tbl_porous_pavement), ", rv$weight(), ", ", 
                                     rv$time_one(), ", ", rv$rate_one(), ")")
             
             #add second test to results
-            add_ppr_two_query <- paste0("INSERT INTO fieldwork.porous_pavement_results (porous_pavement_uid, weight_lbs, time_s, rate_inhr) 
-                                      vALUES ((SELECT MAX(porous_pavement_uid) FROM fieldwork.porous_pavement), ", rv$weight(), ", ", 
+            add_ppr_two_query <- paste0("INSERT INTO fieldwork.tbl_porous_pavement_results (porous_pavement_uid, weight_lbs, time_s, rate_inhr) 
+                                      vALUES ((SELECT MAX(porous_pavement_uid) FROM fieldwork.tbl_porous_pavement), ", rv$weight(), ", ", 
                                         rv$time_two(), ", ", rv$rate_two(), ")")
             
             odbc::dbGetQuery(poolConn, add_ppt_query)
@@ -423,7 +423,7 @@ porous_pavementServer <- function(id, parent_session, surface_type, poolConn, co
           
           #edit records
           edit_ppt_query <- paste0(
-            "UPDATE fieldwork.porous_pavement SET smp_id = '", input$smp_id, "', test_date = '", input$date, 
+            "UPDATE fieldwork.tbl_porous_pavement SET smp_id = '", input$smp_id, "', test_date = '", input$date, 
             "', surface_type_lookup_uid = ",  rv$type(),
             ", con_phase_lookup_uid = '", rv$phase(),
             "', test_location = ", rv$test_location(),
@@ -439,7 +439,7 @@ porous_pavementServer <- function(id, parent_session, surface_type, poolConn, co
           #if test one is already there, edit it. if it's not, add it
           if(!is.na(rv$ppt_table_db()$test_one_porous_pavement_results_uid[input$ppt_table_rows_selected])){
             edit_ppr_one_query <- paste0(
-              "UPDATE fieldwork.porous_pavement_results SET weight_lbs =", rv$weight(),
+              "UPDATE fieldwork.tbl_porous_pavement_results SET weight_lbs =", rv$weight(),
               ", time_s = ", rv$time_one(),
               ", rate_inhr = ", rv$rate_one(),
               " WHERE porous_pavement_results_uid = ", rv$ppt_table_db()$test_one_porous_pavement_results_uid[input$ppt_table_rows_selected]
@@ -448,7 +448,7 @@ porous_pavementServer <- function(id, parent_session, surface_type, poolConn, co
           
           }else{
             #add first test to results
-            add_ppr_one_query <- paste0("INSERT INTO fieldwork.porous_pavement_results (porous_pavement_uid, weight_lbs, time_s, rate_inhr) 
+            add_ppr_one_query <- paste0("INSERT INTO fieldwork.tbl_porous_pavement_results (porous_pavement_uid, weight_lbs, time_s, rate_inhr) 
                                       vALUES ('", rv$ppt_table_db()[input$ppt_table_rows_selected, 1], "', ", rv$weight(), ", ", 
                                         rv$time_one(), ", ", rv$rate_one(), ")")
             
@@ -459,7 +459,7 @@ porous_pavementServer <- function(id, parent_session, surface_type, poolConn, co
           if(!is.na(rv$ppt_table_db()$test_two_porous_pavement_results_uid[input$ppt_table_rows_selected])){
 
             edit_ppr_two_query <- paste0(
-              "UPDATE fieldwork.porous_pavement_results SET weight_lbs =", rv$weight(),
+              "UPDATE fieldwork.tbl_porous_pavement_results SET weight_lbs =", rv$weight(),
               ", time_s = ", rv$time_two(),
               ", rate_inhr = ", rv$rate_two(),
               " WHERE porous_pavement_results_uid = ", rv$ppt_table_db()$test_two_porous_pavement_results_uid[input$ppt_table_rows_selected]
@@ -469,7 +469,7 @@ porous_pavementServer <- function(id, parent_session, surface_type, poolConn, co
           
           }else{
             #add second test to results
-            add_ppr_two_query <- paste0("INSERT INTO fieldwork.porous_pavement_results (porous_pavement_uid, weight_lbs, time_s, rate_inhr) 
+            add_ppr_two_query <- paste0("INSERT INTO fieldwork.tbl_porous_pavement_results (porous_pavement_uid, weight_lbs, time_s, rate_inhr) 
                                       vALUES ('", rv$ppt_table_db()[input$ppt_table_rows_selected, 1], "', ", rv$weight(), ", ", 
                                         rv$time_two(), ", ", rv$rate_two(), ")")
             
@@ -478,7 +478,7 @@ porous_pavementServer <- function(id, parent_session, surface_type, poolConn, co
         }
         
         if(length(input$future_ppt_table_rows_selected) > 0){
-          odbc::dbGetQuery(poolConn, paste0("DELETE FROM fieldwork.future_porous_pavement 
+          odbc::dbGetQuery(poolConn, paste0("DELETE FROM fieldwork.tbl_future_porous_pavement 
                                             WHERE future_porous_pavement_uid = '", 
                                             rv$future_ppt_table_db()[input$future_ppt_table_rows_selected, 1], "'"))
         }
