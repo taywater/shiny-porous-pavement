@@ -22,6 +22,8 @@ library(shinyjs)
 library(DT)
 #reactable for reactable tables
 library(reactable)
+#DBI FOR writing to DB
+library(DBI)
 
 #0.1: database connection and global options --------
 
