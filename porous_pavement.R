@@ -5,19 +5,19 @@
 
 porous_pavementUI <- function(id, label = "porous_pavement", html_req, surface_type, priority, con_phase, future_req){
   ns <- NS(id)
-  navbarPage("Porous Pavement", id = "inTabset", #theme = shinytheme("cerulean"),
+  navbarPage("Porous Pavement", id = "inTabset", theme = shinytheme("cerulean"),
              #1.1 Add/Edit ----
              tabPanel("Add/Edit Porous Pavement Test", value = "ppt_tab", 
                       titlePanel("Add Porous Pavement Test"), 
                       #1.1.1 Sidebar Panel ----
-                      sidebarPanel(selectizeInput(ns("smp_id"), future_req(html_req("SMP ID")), choices = NULL, 
+                      sidebarPanel(selectizeInput(ns("smp_id"), future_req("SMP ID"), choices = NULL, 
                                                   options = list(
                                                     placeholder = 'Select an Option',
                                                     onInitialize = I('function() { this.setValue(""); }')
                                                   )), 
-                                   dateInput(ns("date"), html_req("Test Date"), value = as.Date(NA)), 
-                                   selectInput(ns("surface_type"), html_req("Surface Type"), choices = c("", surface_type$surface_type), selected = NULL), 
-                                   selectInput(ns("con_phase"), html_req("Construction Phase"), choices = c("", con_phase$phase), selected = NULL),
+                                   dateInput(ns("date"),"Test Date", value = as.Date(NA)), 
+                                   selectInput(ns("surface_type"), "Surface Type", choices = c("", surface_type$surface_type), selected = NULL), 
+                                   selectInput(ns("con_phase"),"Construction Phase", choices = c("", con_phase$phase), selected = NULL),
                                    textInput(ns("location"), "Test Location"),
                                    fluidRow(
                                    column(6, selectInput(ns("ring_dia"), "Ring Diameter (in)", choices = c("","9.75", "11.625"), selected = NULL)),
@@ -40,7 +40,7 @@ porous_pavementUI <- function(id, label = "porous_pavement", html_req, surface_t
                                                    )
                                                    ),
                                    #selectInput(ns("data"), "Data in Spreadsheet", choices = c("","Yes" = "1", "No" = "0"), selected = NULL), 
-                                   selectInput(ns("folder"), "Test Location Map in Site Folder", choices = c("","Yes" = "1", "No" = "0"), selected = NULL),
+                                   selectInput(ns("folder"), "Test Location Map in Site Folder", choices = c("","Yes" = TRUE, "No" = FALSE), selected = NULL), # choices = c("","Yes" = "1", "No" = "0") works locally 
                                    conditionalPanel(condition = "input.date !== null", 
                                                     ns = ns, 
                                                     checkboxInput(ns("annual_check"),"Create Annual Future Test?", 
@@ -59,7 +59,7 @@ porous_pavementUI <- function(id, label = "porous_pavement", html_req, surface_t
                                    actionButton(ns("clear_ppt"), "Clear All Fields"),
                                    #actionButton(ns("print_check"), "Print Check"),
                                    fluidRow(
-                                     HTML(paste(html_req(""), " indicates required field for complete tests. ", future_req(""), " indicates required field for future tests.")))
+                                     HTML(paste(future_req(""), " indicates required field for future tests.","For complete test, all fields are rquired.")))
                       ), 
                       #1.1.2 Main Panel -----
                       mainPanel(
@@ -132,9 +132,23 @@ porous_pavementServer <- function(id, parent_session, surface_type, poolConn, co
       
       #2.1.2 toggle states based on what's selected ----
       #toggle state (enable/disable) buttons based on whether system id, test date, and type are selected (this is shinyjs)
-      observe(toggleState(id = "add_ppt", (nchar(input$smp_id) > 0 & length(input$date) > 0 & 
-                                             nchar(input$surface_type) >0 & nchar(input$con_phase) > 0) | length(input$future_ppt_table_rows_selected) > 0))
+      prewet_time_reactive <- reactive(input$prewet_time)
       
+      observe(toggleState(id = "add_ppt", (nchar(input$smp_id) > 0 
+                                           & length(input$date) > 0
+                                           & nchar(input$surface_type) > 0 & nchar(input$con_phase) > 0
+                                           & nchar(input$location) > 0 
+                                           & nchar(input$ring_dia) > 0 
+                                           & !is.na(input$prewet_time)
+                                           & ifelse(input$prewet_time < 599,
+                                                    (nchar(input$weight)>0 &
+                                                     !is.na(input$time_one) &
+                                                     !is.na(input$time_two)), nchar(input$pw_rate) > 0)
+                                           & nchar(input$folder) > 0
+                                           ) 
+                                           | length(input$future_ppt_table_rows_selected) > 0))
+        
+   
       #toggle state for future cet depending on whether smp_id is selected
       observe(toggleState(id = "future_ppt", condition = nchar(input$smp_id) > 0))
       
@@ -184,7 +198,7 @@ porous_pavementServer <- function(id, parent_session, surface_type, poolConn, co
       #query future PPTs
       future_ppt_table_query <- reactive(paste0("SELECT * FROM fieldwork.viw_future_porous_pavement_full 
                                                 WHERE smp_id = '", input$smp_id, "' 
-                                                order by field_test_priority_lookup_uid"))
+                                                order by due_date DESC"))
       rv$future_ppt_table_db <- reactive(odbc::dbGetQuery(poolConn, future_ppt_table_query()))
       
       rv$future_ppt_table <- reactive(rv$future_ppt_table_db() %>% 
