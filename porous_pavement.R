@@ -44,7 +44,7 @@ porous_pavementUI <- function(id, label = "porous_pavement", html_req, surface_t
                                    conditionalPanel(condition = "input.date !== null", 
                                                     ns = ns, 
                                                     checkboxInput(ns("annual_check"),"Create Annual Future Test?", 
-                                                                  value = TRUE)),
+                                                                  value = FALSE)),
                                    conditionalPanel(condition = "input.date === null", 
                                                     ns = ns, 
                                                     selectInput(ns("priority"), "Future Test Priority", 
