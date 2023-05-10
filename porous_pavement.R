@@ -15,9 +15,9 @@ porous_pavementUI <- function(id, label = "porous_pavement", html_req, surface_t
                                                     placeholder = 'Select an Option',
                                                     onInitialize = I('function() { this.setValue(""); }')
                                                   )), 
-                                   dateInput(ns("date"),"Test Date", value = as.Date(NA)), 
                                    selectInput(ns("surface_type"), "Surface Type", choices = c("", surface_type$surface_type), selected = NULL), 
                                    selectInput(ns("con_phase"),"Construction Phase", choices = c("", con_phase$phase), selected = NULL),
+                                   dateInput(ns("date"),"Test Date", value = as.Date(NA)),
                                    textInput(ns("location"), "Test Location"),
                                    fluidRow(
                                    column(6, selectInput(ns("ring_dia"), "Ring Diameter (in)", choices = c("","9.75", "11.625"), selected = NULL)),
@@ -55,6 +55,7 @@ porous_pavementUI <- function(id, label = "porous_pavement", html_req, surface_t
                                    conditionalPanel(condition = "input.date === null", 
                                                     ns= ns, 
                                                     actionButton(ns("future_ppt"), "Add Future Porous Pavement Test")),
+                                   actionButton(ns("mark_complete"), "Mark Future PPT Complete"), 
                                    actionButton(ns("add_ppt"), "Add Porous Pavement Test"), 
                                    actionButton(ns("clear_ppt"), "Clear All Fields"),
                                    #actionButton(ns("print_check"), "Print Check"),
@@ -149,8 +150,24 @@ porous_pavementServer <- function(id, parent_session, surface_type, poolConn, co
                                            | length(input$future_ppt_table_rows_selected) > 0))
         
    
-      #toggle state for future cet depending on whether smp_id is selected
+      #toggle state for future cet depending on whether smp_id is selected 
       observe(toggleState(id = "future_ppt", condition = nchar(input$smp_id) > 0))
+      
+      #button for turning future PPT into a complete record
+      observe(toggleState(id = "mark_complete", condition = (nchar(input$smp_id) > 0 
+                                                              & length(input$date) > 0
+                                                              & nchar(input$surface_type) > 0 
+                                                              & nchar(input$con_phase) > 0
+                                                              & nchar(input$location) > 0 
+                                                              & nchar(input$ring_dia) > 0 
+                                                              & !is.na(input$prewet_time)
+                                                              & ifelse(input$prewet_time < 599,
+                                                                       (nchar(input$weight)>0 &
+                                                                          !is.na(input$time_one) &
+                                                                          !is.na(input$time_two)), nchar(input$pw_rate) > 0)
+                                                              & nchar(input$folder) > 0
+                                                              & length(input$future_ppt_table_rows_selected) != 0)))
+      
       
       #toggle state for metadata depending on whether a test date is included
       #observe(toggleState(id = "data", condition = length(input$date) > 0))
@@ -161,7 +178,7 @@ porous_pavementServer <- function(id, parent_session, surface_type, poolConn, co
       observe(toggleState(id = "weight", condition = length(input$date) > 0))
       observe(toggleState(id = "time_one", condition = length(input$date) > 0))
       observe(toggleState(id = "time_two", condition = length(input$date) > 0))
-      observe(toggleState(id = "annual_check", condition = length(input$future_ppt_table_rows_selected) == 0))
+      #observe(toggleState(id = "annual_check", condition = length(input$future_ppt_table_rows_selected) == 0))
       
       
       #add/edit button toggle
@@ -430,7 +447,106 @@ porous_pavementServer <- function(id, parent_session, surface_type, poolConn, co
         #reset("data")
         reset("priority")
         reset("folder")
+        
+        
       })
+      
+      
+      #on click mark future ppt complete
+      observeEvent(input$mark_complete, {
+        
+        #if prewet time is > 599, only add to record table
+        #if less, then prepare to add to record and results tables
+        if(rv$prewet_time() > 599){
+          #add to porous_pavement
+          add_ppt_query <- paste0("INSERT INTO fieldwork.tbl_porous_pavement (test_date, smp_id, surface_type_lookup_uid, con_phase_lookup_uid,
+                              test_location, map_in_site_folder, ring_diameter_in, prewet_time_s, prewet_rate_inhr)
+          	                  VALUES ('", input$date, "','", input$smp_id, "',",  rv$type(), ",", rv$phase(), ",", rv$test_location(), ",",
+                                  rv$folder(), ", ", rv$ring_dia(), ", ", rv$prewet_time(), ", ", rv$pw_rate(), ")")
+          if(input$annual_check == TRUE){
+            #field_test_priority_lookup_uid = 5 means annual-as.Date(paste(year(Sys.Date())+1,"01","01", sep = "-")) creates first day of next year
+            add_annual_test <- data.frame(smp_id = input$smp_id,
+                                          surface_type_lookup_uid = as.integer(rv$surface_type()),
+                                          con_phase_lookup_uid = as.integer(rv$phase()),
+                                          test_location = input$location,
+                                          field_test_priority_lookup_uid = as.integer(5),
+                                          due_date = as.Date(paste(year(Sys.Date())+1,"01","01", sep = "-")))
+            
+            odbc::dbWriteTable(poolConn, SQL("fieldwork.tbl_future_porous_pavement"), add_annual_test, append= TRUE, row.names = FALSE )
+            
+          }
+          
+          odbc::dbGetQuery(poolConn, add_ppt_query)
+          
+        }else{
+          #add to porous pavement & porous results
+          #add to porous_pavement table
+          #then add to the porous_pavement_results table
+          #use the MAX(porous_pavement_uid) from pp table to get the PP UID of the most recent addition to the table (calculated by SERIAL), which is the current addition
+          #add to porous_pavement
+          add_ppt_query <- paste0("INSERT INTO fieldwork.tbl_porous_pavement (test_date, smp_id, surface_type_lookup_uid, con_phase_lookup_uid,
+                              test_location, map_in_site_folder, ring_diameter_in, prewet_time_s, prewet_rate_inhr)
+          	                  VALUES ('", input$date, "','", input$smp_id, "',",  rv$type(), ",", rv$phase(), ",", rv$test_location(), ",", 
+                                  rv$folder(), ", ", rv$ring_dia(), ", ", rv$prewet_time(), ", ", rv$pw_rate(), ")") 
+          
+          #add first test to results
+          add_ppr_one_query <- paste0("INSERT INTO fieldwork.tbl_porous_pavement_results (porous_pavement_uid, weight_lbs, time_s, rate_inhr) 
+                                      vALUES ((SELECT MAX(porous_pavement_uid) FROM fieldwork.tbl_porous_pavement), ", rv$weight(), ", ", 
+                                      rv$time_one(), ", ", rv$rate_one(), ")")
+          
+          #add second test to results
+          add_ppr_two_query <- paste0("INSERT INTO fieldwork.tbl_porous_pavement_results (porous_pavement_uid, weight_lbs, time_s, rate_inhr) 
+                                      vALUES ((SELECT MAX(porous_pavement_uid) FROM fieldwork.tbl_porous_pavement), ", rv$weight(), ", ", 
+                                      rv$time_two(), ", ", rv$rate_two(), ")")
+          
+          odbc::dbGetQuery(poolConn, add_ppt_query)
+          odbc::dbGetQuery(poolConn, add_ppr_one_query)
+          odbc::dbGetQuery(poolConn, add_ppr_two_query)
+          
+          if(input$annual_check == TRUE){
+            #field_test_priority_lookup_uid = 5 means annual-as.Date(paste(year(Sys.Date())+1,"01","01", sep = "-")) creates first day of next year
+            add_annual_test <- data.frame(smp_id = input$smp_id,
+                                          surface_type_lookup_uid = as.integer(rv$surface_type()),
+                                          con_phase_lookup_uid = as.integer(rv$phase()),
+                                          test_location = input$location,
+                                          field_test_priority_lookup_uid = as.integer(5),
+                                          due_date = as.Date(paste(year(Sys.Date())+1,"01","01", sep = "-")))
+            
+            odbc::dbWriteTable(poolConn, SQL("fieldwork.tbl_future_porous_pavement"), add_annual_test, append= TRUE, row.names = FALSE )
+            
+          }
+        }  
+        
+        delete_future_ppt_query <- paste0("DELETE FROM fieldwork.tbl_future_porous_pavement","
+            WHERE future_porous_pavement_uid = '", rv$future_ppt_table_db()[input$future_ppt_table_rows_selected, 1], "'")
+        
+        odbc::dbGetQuery(poolConn, delete_future_ppt_query) 
+        
+        #re-run query
+        rv$ppt_table_db <- reactive(dbGetQuery(poolConn, rv$query()))
+        
+        rv$all_ppt_table_db <- reactive(dbGetQuery(poolConn, rv$all_query())) 
+        rv$future_ppt_table_db <- reactive(odbc::dbGetQuery(poolConn, future_ppt_table_query()))
+        rv$all_future_ppt_table_db <- reactive(odbc::dbGetQuery(poolConn, rv$all_future_ppt_query))
+        
+        #clear fields
+        reset("date")
+        reset("surface_type")
+        reset("con_phase")
+        reset("location")
+        reset("data")
+        reset("priority")
+        reset("ring_dia")
+        reset("prewet_time")
+        reset("pw_rate")
+        reset("weight")
+        reset("time_one")
+        reset("time_two")
+        reset("rate_one")
+        reset("rate_two")
+        
+      }
+      )
       
       #on click
       observeEvent(input$add_ppt, {
