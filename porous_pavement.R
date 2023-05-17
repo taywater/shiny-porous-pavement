@@ -748,6 +748,7 @@ porous_pavementServer <- function(id, parent_session, surface_type, poolConn, co
         reset("time_two")
         reset("rate_one")
         reset("rate_two")
+        reset("due_date")
         removeModal()
       })
       
